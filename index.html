@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MP3 Sorter and Concatenator</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            background-color: #f0f0f0;
+        }
+        .container {
+            text-align: center;
+            background-color: white;
+            padding: 2rem;
+            border-radius: 10px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+        }
+        #drop-zone {
+            border: 2px dashed #ccc;
+            border-radius: 20px;
+            width: 300px;
+            height: 200px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            margin: 20px auto;
+            transition: all 0.3s ease;
+        }
+        #drop-zone.dragover {
+            background-color: #e1e1e1;
+            border-color: #999;
+        }
+        #file-list {
+            list-style-type: none;
+            padding: 0;
+            margin-top: 20px;
+        }
+        #download-btn {
+            display: none;
+            margin-top: 20px;
+            padding: 10px 20px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        #download-btn:hover {
+            background-color: #45a049;
+        }
+
+        /* ... (previous styles remain unchanged) ... */
+
+        .spinner {
+            display: none;
+            width: 50px;
+            height: 50px;
+            border: 5px solid #f3f3f3;
+            border-top: 5px solid #3498db;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 20px auto;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        #processing-text {
+            display: none;
+            margin-top: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>MP3 Sorter and Concatenator</h1>
+        <div id="drop-zone">Drag & Drop MP3 Files Here</div>
+        <ul id="file-list"></ul>
+        <button id="download-btn">Download Concatenated MP3</button>
+        <div class="spinner" id="spinner"></div>
+        <p id="processing-text">Processing audio files...</p>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/lamejs/1.2.1/lame.min.js"></script>
+    <script>
+        const dropZone = document.getElementById('drop-zone');
+        const fileList = document.getElementById('file-list');
+        const downloadBtn = document.getElementById('download-btn');
+        const spinner = document.getElementById('spinner');
+        const processingText = document.getElementById('processing-text');
+        let files = [];
+
+        // ... (previous code for drag and drop and updateFileList remains unchanged) ...
+
+        dropZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            dropZone.classList.add('dragover');
+        });
+
+        dropZone.addEventListener('dragleave', () => {
+            dropZone.classList.remove('dragover');
+        });
+
+        dropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropZone.classList.remove('dragover');
+            
+            const newFiles = Array.from(e.dataTransfer.files).filter(file => file.type === 'audio/mpeg');
+            files = [...files, ...newFiles];
+            updateFileList();
+        });
+
+        function updateFileList() {
+            fileList.innerHTML = '';
+            files.sort((a, b) => a.name.localeCompare(b.name)).forEach(file => {
+                const li = document.createElement('li');
+                li.textContent = file.name;
+                fileList.appendChild(li);
+            });
+            
+            downloadBtn.style.display = files.length > 0 ? 'inline-block' : 'none';
+        }
+        function upvol(buf) {
+        
+        }
+
+        downloadBtn.addEventListener('click', async () => {
+            if (files.length === 0) return;
+
+            // Show spinner and processing text
+            spinner.style.display = 'block';
+            processingText.style.display = 'block';
+            downloadBtn.disabled = true;
+
+            try {
+                const audioBuffers = await Promise.all(files.map(file => 
+                    file.arrayBuffer().then(arrayBuffer => 
+                        new AudioContext().decodeAudioData(arrayBuffer)
+                    )
+                ));
+
+                const totalLength = audioBuffers.reduce((sum, buffer) => sum + buffer.length, 0);
+                const concatenatedBuffer = new Float32Array(totalLength);
+
+                let offset = 0;
+                audioBuffers.forEach(buffer => {
+                    concatenatedBuffer.set(buffer.getChannelData(0), offset);
+                    offset += buffer.length;
+                });
+
+                // Increase volume by 75%
+                const volumeIncrease = 32767.5;
+                for (let i = 0; i < concatenatedBuffer.length; i++) {
+                    concatenatedBuffer[i] *= volumeIncrease;
+                    //if (concatenatedBuffer[i] > 1) concatenatedBuffer[i] = 1;
+                    // if (concatenatedBuffer[i] < -1) concatenatedBuffer[i] = -1;
+                }
+
+                const mp3encoder = new lamejs.Mp3Encoder(1, audioBuffers[0].sampleRate, 128);
+                const mp3Data = [];
+
+                const sampleBlockSize = 1152;
+                for (let i = 0; i < concatenatedBuffer.length; i += sampleBlockSize) {
+                    const sampleChunk = concatenatedBuffer.subarray(i, i + sampleBlockSize);
+                    const mp3buf = mp3encoder.encodeBuffer(sampleChunk);
+                    if (mp3buf.length > 0) {
+                        mp3Data.push(mp3buf);
+                    }
+                }
+
+                const mp3buf = mp3encoder.flush();
+                if (mp3buf.length > 0) {
+                    mp3Data.push(mp3buf);
+                }
+
+                const blob = new Blob(mp3Data, { type: 'audio/mpeg' });
+                const url = URL.createObjectURL(blob);
+                
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'concatenated.mp3';
+                a.click();
+                URL.revokeObjectURL(url);
+            } catch (error) {
+                console.error('Error processing audio:', error);
+                alert('An error occurred while processing the audio files.');
+            } finally {
+                // Hide spinner and processing text
+                spinner.style.display = 'none';
+                processingText.style.display = 'none';
+                downloadBtn.disabled = false;
+            }
+        });
+    </script>
+</body>
+</html>
