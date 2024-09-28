@@ -83,6 +83,7 @@
     <div class="container">
         <h1>MP3 Sorter and Concatenator</h1>
         <div id="drop-zone">Drag & Drop MP3 Files Here</div>
+        <input type="text" id="tbox"></input>
         <ul id="file-list"></ul>
         <button id="download-btn">Download Concatenated MP3</button>
         <div class="spinner" id="spinner"></div>
@@ -96,6 +97,7 @@
         const downloadBtn = document.getElementById('download-btn');
         const spinner = document.getElementById('spinner');
         const processingText = document.getElementById('processing-text');
+        const tbox = document.getElementById('tbox');
         let files = [];
 
         // ... (previous code for drag and drop and updateFileList remains unchanged) ...
@@ -186,7 +188,11 @@
                 
                 const a = document.createElement('a');
                 a.href = url;
-                a.download = 'concatenated.mp3';
+                if (tbox.value !==""){
+                    a.download = `${tbox.value}.mp3`;
+                } else {
+                    a.download = 'concatenated.mp3';
+                }
                 a.click();
                 URL.revokeObjectURL(url);
             } catch (error) {
